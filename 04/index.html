@@ -1,165 +1,308 @@
 <html>
   <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
+    <title>Flashy Fish!</title>
     <style>
       html, body { 
-        background-color:#000;
+        background: url('https://cs460.org/assignments/04/bg.jpg');
+        background-size: cover;
         margin: 0;
         padding: 0;
         height: 100%;
         overflow: hidden !important;  
       }
-    </style>
 
-    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
-
-    <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@latest/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@latest/examples/jsm/"
+      #c {
+        width: 100%;
+        height: 100%;
       }
+    </style>
+  </head>
+  <script type="text/javascript" src="https://cs460.org/js/glmatrix.js"></script>
+  
+  <script id="vertexshader" type="glsl">
+    attribute vec3 a_position;
+
+    uniform mat4 u_transform;
+    uniform float u_pointsize;
+
+    void main(void) {
+      vec4 final_position = u_transform * vec4( a_position, 1.);
+      gl_Position = final_position;
+      gl_PointSize = u_pointsize;
     }
-    </script>
+  </script>
+  
+  <script id="fragmentshader" type="glsl">
+    precision mediump float;
 
-    <script type="module">
-      import * as THREE from 'three';
-      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    uniform vec4 u_color;
 
-      let renderer, controls, scene, camera;
-      let LASTOBJECT = null;
-      let placing = false;
-      let FLICKERING = false;
-      let WIREFRAME = false;
+    void main(void) {
+      gl_FragColor = u_color;
+    }
+  </script>
+  
+  <script>
 
-      window.onload = function() {
-        scene = new THREE.Scene();
+    var c, gl;
+    var redFishControl = [0, 0]; // stores x, y movement for the red fish
+    var moveSpeed = 0.02; // how fast the red fish moves with each key press
+    var v_shader, f_shader, shaderprogram;
+    var vertices, indices, v_buffer, i_buffer;
 
-        // Camera
-        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 10000);
-        camera.position.set(0, 0, 100);
+    window.onload = function() {
 
-        // Renderer
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setClearColor(0x000000);
-        document.body.appendChild(renderer.domElement);
+      //************************************************************//
+      //
+      // INITIALIZE WEBGL
+      //
+      c = document.getElementById( 'c' ); // setup canvas
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
 
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0x404040, 1.2);
-        scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        directionalLight.position.set(10, 100, 10);
-        scene.add(directionalLight);
+      gl = c.getContext( 'webgl' ); // setup GL context
+      gl.viewport(0, 0, c.width, c.height );
 
-        // Invisible plane for placement
-        const planeGeo = new THREE.PlaneGeometry(10000, 10000);
-        const planeMat = new THREE.MeshBasicMaterial({ visible: false });
-        const invisible_plane = new THREE.Mesh(planeGeo, planeMat);
-        scene.add(invisible_plane);
 
-        // Initial yellow torus knot
-        const initialKnot = new THREE.Mesh(
-          new THREE.TorusKnotGeometry(10, 3, 100, 16),
-          new THREE.MeshStandardMaterial({ color: 0xffff00 })
-        );
-        scene.add(initialKnot);
+      //************************************************************//
+      //
+      // SHADERS
+      //
+      v_shader = gl.createShader( gl.VERTEX_SHADER );
+      f_shader = gl.createShader( gl.FRAGMENT_SHADER );
+      
+      // compile vertex shader
+      gl.shaderSource( v_shader, document.getElementById( 'vertexshader' ).innerText );
+      gl.compileShader( v_shader );
 
-        // OrbitControls
-        controls = new OrbitControls(camera, renderer.domElement);
+      if (!gl.getShaderParameter( v_shader, gl.COMPILE_STATUS)) {
+        console.log(gl.getShaderInfoLog( v_shader ));
+      }
 
-        // Mouse down: place hotpink torus knot
-        renderer.domElement.onmousedown = function(e) {
-          if (!e.shiftKey) return;
+      // compile fragment shader
+      gl.shaderSource( f_shader, document.getElementById( 'fragmentshader' ).innerText );
+      gl.compileShader( f_shader );
 
-          controls.enabled = false;
-          placing = true;
+      if (!gl.getShaderParameter( f_shader, gl.COMPILE_STATUS)) {
+        console.log(gl.getShaderInfoLog( f_shader ));
+      }
 
-          const mouse = new THREE.Vector2(
-            (e.clientX / window.innerWidth) * 2 - 1,
-            -(e.clientY / window.innerHeight) * 2 + 1
-          );
+      // attach and link the shaders
+      shaderprogram = gl.createProgram();
+      gl.attachShader( shaderprogram, v_shader );
+      gl.attachShader( shaderprogram, f_shader );
 
-          const raycaster = new THREE.Raycaster();
-          raycaster.setFromCamera(mouse, camera);
-          const intersects = raycaster.intersectObject(invisible_plane);
+      gl.linkProgram( shaderprogram );
 
-          if (intersects.length > 0) {
-            const material = new THREE.MeshStandardMaterial({
-              color: 0xff69b4, // hotpink
-              wireframe: WIREFRAME
-            });
-            const newKnot = new THREE.Mesh(
-              new THREE.TorusKnotGeometry(10, 3, 100, 16),
-              material
-            );
-            newKnot.position.copy(intersects[0].point);
-            scene.add(newKnot);
-            LASTOBJECT = newKnot;
-          }
-        };
+      gl.useProgram( shaderprogram );
 
-        // Mouse move: scale last placed torus knot
-        renderer.domElement.onmousemove = function(e) {
-          if (placing && LASTOBJECT) {
-            const DELTA = -e.movementY * 0.1;
-            LASTOBJECT.scale.set(
-              LASTOBJECT.scale.x + DELTA,
-              LASTOBJECT.scale.y + DELTA,
-              LASTOBJECT.scale.z + DELTA
-            );
 
-            // Switch color if flipped
-            if (LASTOBJECT.scale.x < 0) {
-              LASTOBJECT.material.color.set(0x7CFC00); // grassgreen
-            } else {
-              LASTOBJECT.material.color.set(0xff69b4); // hotpink
-            }
-          }
-        };
+      // create multiple fish
+      all_fish = [];
+      // Add the big red fish
+      all_fish.push( createFish( [0, 0, 0], [1,0,0,1], 1, -1) );
+      
+      // Add 100 small fish
+      for (var i = 0; i < 100; i++) {
+        random_color = [Math.random(),Math.random(),Math.random(),Math.random()];
+        random_offset = [Math.random()-Math.random(), Math.random()-Math.random(), 0];
+        random_scale = Math.random()*0.3;
+        all_fish.push( createFish(random_offset, random_color, random_scale, 1) );
+      }
 
-        // Mouse up: stop placing
-        renderer.domElement.onmouseup = function() {
-          controls.enabled = true;
-          placing = false;
-          LASTOBJECT = null;
-        };
+      // Keyboard controls for big red fish
+      window.addEventListener("keydown", function(e) {
+        switch (e.key) {
+          case "ArrowLeft":
+            redFishControl[0] -= moveSpeed;
+            break;
+          case "ArrowRight":
+            redFishControl[0] += moveSpeed;
+            break;
+          case "ArrowUp":
+            redFishControl[1] += moveSpeed;
+            break;
+          case "ArrowDown":
+            redFishControl[1] -= moveSpeed;
+            break;
+        }
+      });
 
-        // Keypress: flicker (f) / wireframe (w)
-        window.onkeypress = function(e) {
-          if (e.key.toLowerCase() === 'f') {
-            FLICKERING = !FLICKERING;
-          }
-          if (e.key.toLowerCase() === 'w') {
-            WIREFRAME = !WIREFRAME;
-            scene.traverse(function(obj) {
-              if (obj.isMesh && obj.material) {
-                obj.material.wireframe = WIREFRAME;
-              }
-            });
-          }
-        };
+      animate();
 
-        animate();
-      };
+    };
 
-      function animate() {
-        requestAnimationFrame(animate);
 
-        // Flickering
-        if (FLICKERING) {
-          scene.traverse(function(obj) {
-            if (obj.isMesh && obj.material) {
-              obj.material.opacity = Math.random();
-              obj.material.transparent = true;
-              obj.material.needsUpdate = true;
-            }
-          });
+    function createFish(offset, color, scale, direction) {
+
+      // Fish vertices
+      var vertices = new Float32Array([
+        0.5, 0.0, 0.0, // 0: nose
+        0.2, 0.25, 0.0, // 1: upper body
+        -0.2, 0.15, 0.0, // 2: upper tail base
+        -0.4, 0.3, 0.0, // 3: upper tail tip
+        -0.4, -0.3, 0.0, // 4: lower tail tip
+        -0.2, -0.15, 0.0, // 5: lower tail base
+        0.2, -0.25, 0.0 // 6: lower body
+      ]);
+
+      // Fish indices
+      var indices = new Uint8Array([
+        0, 1, 6, // main body
+        1, 2, 6, // upper mid-body
+        2, 5, 6, // rear body
+        2, 3, 5, // tail top
+        3, 4, 5 // tail fin
+      ]);
+
+      // Eye vertex
+      var eye_vertex;
+      if (direction == -1) {
+        eye_vertex = new Float32Array([0.2, -0.2, 0.0]);
+      } else {
+        eye_vertex = new Float32Array([0.2, 0.2, 0.0]);
+      }
+
+      // Create vertex buffer
+      var v_buffer = gl.createBuffer();
+      gl.bindBuffer( gl.ARRAY_BUFFER, v_buffer );
+      gl.bufferData( gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW );
+      gl.bindBuffer( gl.ARRAY_BUFFER, null );
+
+      // Create index buffer
+      var i_buffer = gl.createBuffer();
+      gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, i_buffer );
+      gl.bufferData( gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW );
+      gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, null );
+
+      // Create eye vertex buffer
+      var eye_v_buffer = gl.createBuffer();
+      gl.bindBuffer( gl.ARRAY_BUFFER, eye_v_buffer );
+      gl.bufferData( gl.ARRAY_BUFFER, eye_vertex, gl.STATIC_DRAW );
+      gl.bindBuffer( gl.ARRAY_BUFFER, null );
+
+      return [v_buffer, i_buffer, eye_v_buffer, color, offset, scale, direction];
+    };
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Enable transparency
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.disable(gl.DEPTH_TEST);
+
+      gl.clearColor( 0., 0., 0., 0.)
+      gl.clear( gl.COLOR_BUFFER_BIT );
+
+      for( var r = 0; r < all_fish.length; r++ ) {
+        // current_buffers is a list of [v_buffer, i_buffer, eye_v_buffer, color, offset, scale, direction]
+        var current_buffers = all_fish[r];
+        var current_v_buffer = current_buffers[0];
+        var current_i_buffer = current_buffers[1];
+        var current_eye_v_buffer = current_buffers[2];
+        var current_color = current_buffers[3];
+        var current_offset = current_buffers[4];
+        var current_scale = current_buffers[5];
+        var current_direction = current_buffers[6];
+
+        // Update fish movement
+        if (r === 0) {
+          // Big red fish: controlled by arrow keys
+          current_offset[0] += redFishControl[0];
+          current_offset[1] += redFishControl[1];
+
+          // Keep red fish within screen bounds
+          if (current_offset[0] > 1) current_offset[0] = 1;
+          if (current_offset[0] < -1) current_offset[0] = -1;
+          if (current_offset[1] > 1) current_offset[1] = 1;
+          if (current_offset[1] < -1) current_offset[1] = -1;
+
+          // Reset control delta (so it moves one step per press)
+          redFishControl = [0, 0];
+        } else {
+          // Small fish: swim automatically
+          current_offset[0] += 0.01;
+          current_offset[1] += 0.1*Math.random();
+          current_offset[1] -= 0.1*Math.random();
+          if (current_offset[0] >= 1) current_offset[0] = -1;
+        }
+        
+        if (current_offset[0] >= 1) {
+          current_offset[0] = -1;
         }
 
-        controls.update();
-        renderer.render(scene, camera);
+        // Create transformation matrix with rotation and scale
+        var theta = Math.random()*10 * Math.PI/180; // convert 0..10 degrees to radians
+        var transform = [
+          current_direction*current_scale*Math.cos(theta), Math.sin(theta), 0, 0,
+          -Math.sin(theta), current_direction*current_scale*Math.cos(theta), 0, 0,
+          0, 0, current_direction*current_scale*1, 0,
+          current_offset[0], current_offset[1], current_offset[2], 1
+        ];
+
+        //************************************************************//
+        //
+        // CONNECT SHADER WITH GEOMETRY
+        //
+        
+        gl.bindBuffer( gl.ARRAY_BUFFER, current_v_buffer );
+        gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, current_i_buffer );
+
+        // Find the attribute in the shader source
+        var a_position = gl.getAttribLocation( shaderprogram, 'a_position' );
+        gl.vertexAttribPointer( a_position, 3, gl.FLOAT, false, 0, 0 );
+        gl.enableVertexAttribArray ( a_position );
+
+        // Find the uniforms in the shader source
+        var u_transform = gl.getUniformLocation( shaderprogram, 'u_transform' );
+        gl.uniformMatrix4fv( u_transform, false, new Float32Array(transform));
+
+        // Set fish color with pulsating effect for small fish
+        var t = performance.now() * 0.001;
+        var a = 0.6 + 0.4 * Math.sin(t * 2.0); // 0.2..1.0
+        
+        if (r > 0) { // Small fish
+          current_color = new Float32Array([
+            0.3 + 0.2*Math.sin(t + 0.0),
+            0.6 + 0.2*Math.sin(t + 2.0),
+            0.9 + 0.1*Math.sin(t + 4.0),
+            a
+          ]);
+        } else { // Large fish (first one) stays red
+          current_color = new Float32Array([1, 0, 0, 0.7]);
+        }
+        
+        var u_color = gl.getUniformLocation( shaderprogram, 'u_color' );
+        gl.uniform4fv( u_color, current_color );
+
+        //************************************************************//
+        //
+        // DRAW FISH BODY!
+        //
+        gl.drawElements( gl.TRIANGLES, 15, gl.UNSIGNED_BYTE, 0);
+
+        //************************************************************//
+        //
+        // DRAW FISH EYE!
+        //
+        gl.uniform4fv( u_color, new Float32Array([0, 0, 0, .5]));
+        
+        var u_pointsize = gl.getUniformLocation( shaderprogram, 'u_pointsize' );
+        gl.uniform1fv( u_pointsize, new Float32Array([current_scale*20.]));
+        
+        gl.enableVertexAttribArray ( a_position );
+        gl.bindBuffer( gl.ARRAY_BUFFER, current_eye_v_buffer );
+        gl.vertexAttribPointer(a_position, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(a_position);
+        gl.drawArrays( gl.POINTS, 0, 1);
       }
-    </script>
-  </head>
-  <body></body>
+    };
+  </script>
+  <body>
+    <canvas id="c"></canvas>
+  </body>
 </html>
