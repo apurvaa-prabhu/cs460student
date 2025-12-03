@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>WebGPU BONUS - remote1.glb with PBR</title>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    #renderCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylon.glTF2FileLoader.min.js"></script>
+
+  <script>
+    const canvas = document.getElementById('renderCanvas');
+
+    async function start() {
+      let engine;
+      if (BABYLON.WebGPUEngine && navigator.gpu) {
+        try {
+          engine = new BABYLON.WebGPUEngine(canvas, { antialiasing: true });
+          await engine.initAsync();
+          console.log('Using WebGPU engine (bonus)');
+        } catch (e) {
+          console.warn('WebGPU init failed, falling back to WebGL:', e);
+        }
+      }
+      if (!engine) {
+        engine = new BABYLON.Engine(canvas, true);
+        console.log('Using WebGL engine fallback (bonus)');
+      }
+
+      const scene = new BABYLON.Scene(engine);
+
+
+      scene.clearColor = new BABYLON.Color4(0.01, 0.01, 0.01, 1.0);
+
+
+      await BABYLON.SceneLoader.AppendAsync('', 'remote1.glb', scene);
+
+
+      scene.createDefaultCameraOrLight(true, true, true);
+      const env = scene.createDefaultEnvironment({
+        createGround: false,
+        createSkybox: true,
+        enableGroundShadow: false,
+        environmentIntensity: 1.0
+      });
+
+
+      if (scene.activeCamera) {
+        scene.activeCamera.attachControl(canvas, true);
+      }
+
+
+      const modelMeshes = scene.meshes.filter(m =>
+        m.name !== 'BackgroundSkybox' && m.name !== 'BackgroundPlane'
+      );
+
+
+      modelMeshes.forEach(mesh => {
+        mesh.scaling = new BABYLON.Vector3(2, 2, 2);
+      });
+
+
+      modelMeshes.forEach(mesh => {
+        if (!mesh.material) return;
+
+        const pbr = new BABYLON.PBRMaterial('pbrMaterial_' + mesh.name, scene);
+
+
+        pbr.albedoColor = new BABYLON.Color3(0.8, 0.2, 0.3);   
+        pbr.metallic    = 1.0;                                 
+        pbr.roughness   = 0.2;                                 
+
+
+        pbr.clearCoat.isEnabled = true;
+        pbr.clearCoat.intensity = 0.8;
+        pbr.clearCoat.roughness = 0.1;
+
+        if (env && env.environmentTexture) {
+          pbr.reflectionTexture = env.environmentTexture;
+        }
+
+        mesh.material = pbr;
+      });
+
+      const root = modelMeshes[0]; 
+      scene.registerBeforeRender(() => {
+        if (root) {
+          root.rotate(BABYLON.Axis.Y, 0.01, BABYLON.Space.WORLD);
+        }
+      });
+
+
+      engine.runRenderLoop(() => {
+        scene.render();
+      });
+
+      window.addEventListener('resize', () => engine.resize());
+    }
+
+    start().catch(err => {
+      console.error(err);
+      alert('Error starting webgpu_bonus.html: see console');
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>WebGPU - remote1.glb</title>
+  <style>
+    html,body { width:100%; height:100%; margin:0; padding:0; overflow:hidden; background: #000;}
+    #renderCanvas { width:100%; height:100%; display:block; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylon.glTF2FileLoader.min.js"></script>
+
+  <script>
+    const canvas = document.getElementById('renderCanvas');
+
+    async function start() {
+      let engine;
+      if (BABYLON.WebGPUEngine && navigator.gpu) {
+        try {
+          engine = new BABYLON.WebGPUEngine(canvas, { antialiasing: true });
+          await engine.initAsync();
+          console.log('Using WebGPU engine');
+        } catch(e) {
+          console.warn('WebGPU init failed, falling back to WebGL:', e);
+        }
+      }
+      if (!engine) {
+        engine = new BABYLON.Engine(canvas, true);
+        console.log('Using WebGL engine fallback');
+      }
+
+      const scene = new BABYLON.Scene(engine);
+      await BABYLON.SceneLoader.AppendAsync('', 'remote1.glb', scene);
+
+      scene.createDefaultCameraOrLight(true, true, true);
+      scene.activeCamera.attachControl(canvas, true);
+
+      engine.runRenderLoop(() => scene.render());
+      window.addEventListener('resize', () => engine.resize());
+    }
+
+    start().catch(err => { console.error(err); alert('Error starting webgpu.html: see console'); });
+  </script>
+</body>
+</html>
